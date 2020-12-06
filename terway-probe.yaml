@@ -1,0 +1,165 @@
+apiVersion: "apps/v1"
+kind: "StatefulSet"
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "4"
+  labels:
+    app: "nginx"
+  name: "nginx"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  serviceName: nginx
+  selector:
+    matchLabels:
+      app: "nginx"
+  template:
+    metadata:
+      labels:
+        app: "nginx"
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: "container"
+          image: "docker.io/library/nginx:1.19.0-alpine"
+          imagePullPolicy: "Always"
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - "sh"
+                  - "-c"
+                  - "sleep 15 || echo 1"
+          livenessProbe:
+            failureThreshold: 4
+            initialDelaySeconds: 484
+            periodSeconds: 9
+            successThreshold: 1
+            tcpSocket:
+              port: 80
+            timeoutSeconds: 3
+          ports:
+            - containerPort: 80
+              name: "port-0"
+              protocol: "TCP"
+          readinessProbe:
+            failureThreshold: 4
+            initialDelaySeconds: 4
+            periodSeconds: 4
+            successThreshold: 1
+            tcpSocket:
+              port: 80
+            timeoutSeconds: 3
+          terminationMessagePath: "/dev/termination-log"
+          terminationMessagePolicy: "File"
+          volumeMounts:
+            - mountPath: "/etc/nginx/nginx.conf"
+              subPath: "nginx.conf"
+              name: "nginx"
+      initContainers:
+        - args:
+            - "-c"
+            - "(mount -o remount rw /proc/sys && sysctl -w net.core.somaxconn=65535) ||\
+          \ :"
+          command:
+            - "/bin/sh"
+          image: "docker.io/library/busybox:1.32.0"
+          imagePullPolicy: "IfNotPresent"
+          name: "init-sysctl"
+          resources: {}
+          securityContext:
+            capabilities:
+              add:
+                - "SYS_ADMIN"
+              drop:
+                - "ALL"
+            procMount: "Default"
+          terminationMessagePath: "/dev/termination-log"
+          terminationMessagePolicy: "File"
+      restartPolicy: "Always"
+      schedulerName: "default-scheduler"
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - configMap:
+            defaultMode: 292
+            items:
+              - key: "nginx.conf"
+                mode: 292
+                path: "nginx.conf"
+            name: "nginx"
+            optional: false
+          name: "nginx"
+---
+apiVersion: v1
+data:
+  nginx.conf: |
+    user  nginx;
+    worker_processes  6;
+
+    error_log  /var/log/nginx/error.log warn;
+    pid        /var/run/nginx.pid;
+
+    events {
+        worker_connections  1024;
+    }
+
+    http {
+        include       /etc/nginx/mime.types;
+        default_type  application/octet-stream;
+
+        log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                          '$status $body_bytes_sent "$http_referer" '
+                          '"$http_user_agent" "$http_x_forwarded_for"';
+
+        access_log  /var/log/nginx/access.log  main;
+
+        sendfile        on;
+
+        keepalive_timeout  65;
+
+
+        include /etc/nginx/conf.d/*.conf;
+    }
+
+kind: ConfigMap
+metadata:
+  name: nginx
+---
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: nginx
+spec:
+  concurrencyPolicy: Allow
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    metadata:
+      labels:
+        app: "nginx"
+    spec:
+      template:
+        spec:
+          containers:
+            - args:
+                - /usr/local/bin/terway-probe
+              env:
+                - name: URI
+                  value: "http://nginx-0.nginx.jonathan/"
+                # 每次发起http 请求时，sleep 的间隔
+                - name: MILLISECOND
+                  value: "1000"
+              image: docker.io/jianhaiqing/terway-probe:v1
+              imagePullPolicy: IfNotPresent
+              name: probe
+              terminationMessagePath: /dev/termination-log
+              terminationMessagePolicy: File
+          dnsPolicy: ClusterFirst
+          restartPolicy: Never
+          schedulerName: default-scheduler
+          securityContext: {}
+          serviceAccountName: terway
+          terminationGracePeriodSeconds: 30
+  schedule: '*/1 * * * *'
+  successfulJobsHistoryLimit: 3
+  suspend: false
