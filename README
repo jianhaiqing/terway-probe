@@ -1,0 +1,5 @@
+### build
+
+GOOS=linux GOARCH=amd64 go build -o terway-probe  ./main.go && docker build -t terway-probe:v1 -f Dockerfile
+
+docker tag terway-probe:v1 jianhaiqing/terway-probe:v1  && docker push jianhaiqing/terway-probe:v1
