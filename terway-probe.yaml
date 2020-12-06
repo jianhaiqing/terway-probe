@@ -163,3 +163,19 @@ spec:
   schedule: '*/1 * * * *'
   successfulJobsHistoryLimit: 3
   suspend: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+spec:
+  clusterIP: None
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 80
+  selector:
+    app: "nginx"
+  sessionAffinity: None
+  type: ClusterIP
